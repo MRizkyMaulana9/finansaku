@@ -1,5 +1,5 @@
 import streamlit as st
-import google.generativeai as genai
+from groq import Groq
 from typing import Optional
 
 
@@ -33,74 +33,37 @@ Gaya komunikasi:
 """
 
 
-def get_gemini_model():
-    """Inisialisasi dan return model Gemini dengan fallback."""
+def get_groq_client():
+    """Inisialisasi dan return Groq client."""
     try:
-        api_key = st.secrets.get("GEMINI_API_KEY", "")
+        api_key = st.secrets.get("GROQ_API_KEY", "")
         if not api_key:
             return None
-
-        genai.configure(api_key=api_key)
-
-        # Coba beberapa model, fallback jika tidak tersedia
-        model_candidates = [
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-        ]
-
-        for model_name in model_candidates:
-            try:
-                model = genai.GenerativeModel(
-                    model_name=model_name,
-                    system_instruction=SYSTEM_PROMPT,
-                    generation_config=genai.GenerationConfig(
-                        temperature=0.7,
-                        top_p=0.9,
-                        max_output_tokens=1024,
-                    )
-                )
-                # Test model dengan request ringan
-                model.generate_content("test", stream=False)
-                return model
-            except Exception:
-                continue
-
-        # Jika semua gagal, gunakan model pertama tanpa test
-        model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
-            system_instruction=SYSTEM_PROMPT,
-            generation_config=genai.GenerationConfig(
-                temperature=0.7,
-                top_p=0.9,
-                max_output_tokens=1024,
-            )
-        )
-        return model
+        client = Groq(api_key=api_key)
+        return client
     except Exception as e:
-        st.error(f"Error inisialisasi Gemini: {e}")
+        st.error(f"Error inisialisasi Groq: {e}")
         return None
 
 
-def init_chat_session(model, financial_context: str = ""):
-    """Inisialisasi chat session dengan konteks keuangan."""
-    chat = model.start_chat(history=[])
+MODEL_NAME = "llama-3.3-70b-versatile"
+
+
+def init_chat_session(client, financial_context: str = ""):
+    """Inisialisasi chat messages dengan konteks keuangan."""
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT}
+    ]
 
     if financial_context:
-        # Kirim konteks keuangan sebagai pesan awal (tidak ditampilkan ke user)
-        intro = f"""Berikut adalah data keuangan pengguna saat ini:
+        messages.append({
+            "role": "system",
+            "content": f"Berikut data keuangan pengguna saat ini:\n\n{financial_context}\n\n"
+                       f"Gunakan data ini untuk memberikan saran yang personal dan relevan. "
+                       f"Jangan sebutkan bahwa kamu menerima data ini kecuali pengguna bertanya."
+        })
 
-{financial_context}
-
-Gunakan data ini untuk memberikan saran yang personal dan relevan.
-Jangan sebutkan bahwa kamu menerima data ini kecuali pengguna bertanya tentang keuangan mereka.
-Mulai dengan menyapa pengguna dan tanyakan apa yang bisa kamu bantu."""
-        try:
-            chat.send_message(intro)
-        except Exception:
-            # Jika gagal kirim konteks, mulai chat baru tanpa konteks
-            chat = model.start_chat(history=[])
-
-    return chat
+    return messages
 
 
 def format_financial_context(ringkasan: dict) -> str:
@@ -128,16 +91,24 @@ Detail Pengeluaran per Kategori:"""
     return context
 
 
-def get_ai_response(chat_session, user_message: str) -> str:
-    """Dapatkan respons AI dari chat session (streaming)."""
+def get_ai_response(client, messages: list, user_message: str):
+    """Dapatkan respons AI dari Groq (streaming)."""
     try:
-        response = chat_session.send_message(user_message, stream=True)
+        messages.append({"role": "user", "content": user_message})
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            temperature=0.7,
+            max_completion_tokens=1024,
+            top_p=0.9,
+            stream=True,
+        )
         return response
     except Exception as e:
         return f"Maaf, terjadi kesalahan: {str(e)}"
 
 
-def get_quick_analysis(model, ringkasan: dict) -> str:
+def get_quick_analysis(client, ringkasan: dict) -> str:
     """Dapatkan analisis cepat keuangan dari AI."""
     if not ringkasan or ringkasan.get("jumlah_transaksi", 0) == 0:
         return "Belum ada data transaksi untuk dianalisis. Mulai catat pemasukan dan pengeluaran Anda!"
@@ -154,7 +125,15 @@ Fokus pada:
 4. Satu saran konkret"""
 
     try:
-        response = model.generate_content(prompt)
-        return response.text
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_completion_tokens=1024,
+        )
+        return response.choices[0].message.content
     except Exception as e:
         return f"Tidak dapat menghasilkan analisis: {str(e)}"

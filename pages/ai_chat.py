@@ -1,6 +1,6 @@
 import streamlit as st
 from ai_advisor import (
-    get_gemini_model,
+    get_groq_client,
     init_chat_session,
     format_financial_context,
     get_ai_response
@@ -13,18 +13,18 @@ def show():
 
     fm = st.session_state.finance_manager
 
-    # ── Initialize AI Model ──
-    model = get_gemini_model()
+    # ── Initialize AI Client ──
+    client = get_groq_client()
 
-    if model is None:
+    if client is None:
         st.warning("""
-        ⚠️ **API Key Gemini belum dikonfigurasi.**
+        ⚠️ **API Key Groq belum dikonfigurasi.**
 
         Untuk menggunakan AI Advisor, silakan:
-        1. Dapatkan API key gratis di [Google AI Studio](https://aistudio.google.com/apikey)
+        1. Dapatkan API key gratis di [Groq Console](https://console.groq.com/keys)
         2. Buat file `.streamlit/secrets.toml` dengan isi:
            ```
-           GEMINI_API_KEY = "your_api_key_here"
+           GROQ_API_KEY = "gsk_your_api_key_here"
            ```
         3. Atau set di Streamlit Cloud: Settings → Secrets
         """)
@@ -34,10 +34,10 @@ def show():
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = []
 
-    if "chat_session" not in st.session_state:
+    if "chat_history" not in st.session_state:
         ringkasan = fm.ringkasan_keuangan()
         context = format_financial_context(ringkasan)
-        st.session_state.chat_session = init_chat_session(model, context)
+        st.session_state.chat_history = init_chat_session(client, context)
         # Add welcome message
         st.session_state.chat_messages.append({
             "role": "assistant",
@@ -70,7 +70,7 @@ def show():
             st.session_state.chat_messages = []
             ringkasan = fm.ringkasan_keuangan()
             context = format_financial_context(ringkasan)
-            st.session_state.chat_session = init_chat_session(model, context)
+            st.session_state.chat_history = init_chat_session(client, context)
             st.session_state.chat_messages.append({
                 "role": "assistant",
                 "content": "Chat direset! 🔄 Ada yang bisa saya bantu?"
@@ -102,16 +102,20 @@ def show():
         # Generate AI response with streaming
         with st.chat_message("assistant", avatar="🤖"):
             try:
-                response = get_ai_response(st.session_state.chat_session, prompt)
+                response = get_ai_response(
+                    client,
+                    st.session_state.chat_history,
+                    prompt
+                )
                 if isinstance(response, str):
                     st.markdown(response)
                     full_response = response
                 else:
-                    # Streaming response
+                    # Streaming response from Groq
                     def stream_generator():
                         for chunk in response:
-                            if chunk.text:
-                                yield chunk.text
+                            if chunk.choices[0].delta.content:
+                                yield chunk.choices[0].delta.content
 
                     full_response = st.write_stream(stream_generator())
 
@@ -120,6 +124,11 @@ def show():
                 st.error(full_response)
 
         st.session_state.chat_messages.append({
+            "role": "assistant",
+            "content": full_response
+        })
+        # Tambah ke history untuk konteks percakapan
+        st.session_state.chat_history.append({
             "role": "assistant",
             "content": full_response
         })
