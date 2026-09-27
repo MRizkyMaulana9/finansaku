@@ -55,13 +55,12 @@ def get_available_model(client):
     if MODEL_NAME:
         return MODEL_NAME
 
-    # Prioritas model dari yang terbaik
+    # Prioritas model dari yang terbaik (2026)
     preferred = [
+        "meta-llama/llama-4-scout-17b-16e-instruct",
         "llama-3.3-70b-versatile",
-        "llama-3.1-70b-versatile",
-        "llama3-70b-8192",
+        "openai/gpt-oss-20b",
         "llama-3.1-8b-instant",
-        "llama3-8b-8192",
         "gemma2-9b-it",
         "mixtral-8x7b-32768",
     ]
@@ -78,7 +77,7 @@ def get_available_model(client):
         pass
 
     # Fallback
-    MODEL_NAME = "llama-3.1-8b-instant"
+    MODEL_NAME = "meta-llama/llama-4-scout-17b-16e-instruct"
     return MODEL_NAME
 
 
