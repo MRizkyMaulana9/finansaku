@@ -34,15 +34,41 @@ Gaya komunikasi:
 
 
 def get_gemini_model():
-    """Inisialisasi dan return model Gemini."""
+    """Inisialisasi dan return model Gemini dengan fallback."""
     try:
         api_key = st.secrets.get("GEMINI_API_KEY", "")
         if not api_key:
             return None
 
         genai.configure(api_key=api_key)
+
+        # Coba beberapa model, fallback jika tidak tersedia
+        model_candidates = [
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
+            "gemini-1.5-flash-latest",
+        ]
+
+        for model_name in model_candidates:
+            try:
+                model = genai.GenerativeModel(
+                    model_name=model_name,
+                    system_instruction=SYSTEM_PROMPT,
+                    generation_config=genai.GenerationConfig(
+                        temperature=0.7,
+                        top_p=0.9,
+                        max_output_tokens=1024,
+                    )
+                )
+                # Test model dengan request ringan
+                model.generate_content("test", stream=False)
+                return model
+            except Exception:
+                continue
+
+        # Jika semua gagal, gunakan model pertama tanpa test
         model = genai.GenerativeModel(
-            model_name="gemini-2.0-flash",
+            model_name="gemini-1.5-flash",
             system_instruction=SYSTEM_PROMPT,
             generation_config=genai.GenerationConfig(
                 temperature=0.7,
@@ -69,7 +95,11 @@ def init_chat_session(model, financial_context: str = ""):
 Gunakan data ini untuk memberikan saran yang personal dan relevan.
 Jangan sebutkan bahwa kamu menerima data ini kecuali pengguna bertanya tentang keuangan mereka.
 Mulai dengan menyapa pengguna dan tanyakan apa yang bisa kamu bantu."""
-        chat.send_message(intro)
+        try:
+            chat.send_message(intro)
+        except Exception:
+            # Jika gagal kirim konteks, mulai chat baru tanpa konteks
+            chat = model.start_chat(history=[])
 
     return chat
 
