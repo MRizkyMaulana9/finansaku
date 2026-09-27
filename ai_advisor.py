@@ -46,7 +46,40 @@ def get_groq_client():
         return None
 
 
-MODEL_NAME = "llama-3.3-70b-versatile"
+MODEL_NAME = None
+
+
+def get_available_model(client):
+    """Cari model yang tersedia di akun Groq."""
+    global MODEL_NAME
+    if MODEL_NAME:
+        return MODEL_NAME
+
+    # Prioritas model dari yang terbaik
+    preferred = [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-70b-versatile",
+        "llama3-70b-8192",
+        "llama-3.1-8b-instant",
+        "llama3-8b-8192",
+        "gemma2-9b-it",
+        "mixtral-8x7b-32768",
+    ]
+
+    try:
+        available = client.models.list()
+        available_ids = [m.id for m in available.data]
+
+        for model in preferred:
+            if model in available_ids:
+                MODEL_NAME = model
+                return MODEL_NAME
+    except Exception:
+        pass
+
+    # Fallback
+    MODEL_NAME = "llama-3.1-8b-instant"
+    return MODEL_NAME
 
 
 def init_chat_session(client, financial_context: str = ""):
@@ -96,7 +129,7 @@ def get_ai_response(client, messages: list, user_message: str):
     try:
         messages.append({"role": "user", "content": user_message})
         response = client.chat.completions.create(
-            model=MODEL_NAME,
+            model=get_available_model(client),
             messages=messages,
             temperature=0.7,
             max_completion_tokens=1024,
@@ -126,7 +159,7 @@ Fokus pada:
 
     try:
         response = client.chat.completions.create(
-            model=MODEL_NAME,
+            model=get_available_model(client),
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt}
